@@ -41,7 +41,9 @@ final class PokemonRepository: PokemonRepositoryProtocol, @unchecked Sendable {
         switch networkError {
         case .noConnection:
             return .noConnection
-        case .invalidURL, .invalidResponse:
+        case let .invalidResponse(statusCode):
+            return statusCode == 404 ? .notFound : .invalidResponse
+        case .invalidURL:
             return .invalidResponse
         case .decodingFailed:
             return .decodingFailed

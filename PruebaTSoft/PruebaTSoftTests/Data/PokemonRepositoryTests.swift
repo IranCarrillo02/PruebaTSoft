@@ -105,4 +105,38 @@ struct PokemonRepositoryTests {
             try await repository.fetchPokemonDetail(id: 1)
         }
     }
+
+    @Test func fetchDetailThrowsNotFoundForA404WithNoCache() async throws {
+        let apiClient = APIClientMock()
+        apiClient.resultProvider = { _ in throw NetworkError.invalidResponse(statusCode: 404) }
+        let localDataSource = PokemonLocalDataSourceMock()
+        let repository = PokemonRepository(apiClient: apiClient, localDataSource: localDataSource)
+
+        await #expect(throws: AppError.notFound) {
+            try await repository.fetchPokemonDetail(id: 999_999)
+        }
+    }
+
+    @Test func fetchDetailFallsBackToCacheEvenOnA404WhenCacheExists() async throws {
+        let apiClient = APIClientMock()
+        apiClient.resultProvider = { _ in throw NetworkError.invalidResponse(statusCode: 404) }
+        let localDataSource = PokemonLocalDataSourceMock()
+        let cachedDetail = PokemonDetail(
+            id: 1,
+            name: "Bulbasaur",
+            imageURL: nil,
+            heightDecimeters: 7,
+            weightHectograms: 69,
+            baseExperience: 64,
+            types: [],
+            abilities: [],
+            stats: []
+        )
+        localDataSource.detailStorage[1] = cachedDetail
+        let repository = PokemonRepository(apiClient: apiClient, localDataSource: localDataSource)
+
+        let result = try await repository.fetchPokemonDetail(id: 1)
+
+        #expect(result == cachedDetail)
+    }
 }

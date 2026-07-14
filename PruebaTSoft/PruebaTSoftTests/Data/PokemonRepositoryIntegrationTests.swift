@@ -95,4 +95,16 @@ struct PokemonRepositoryIntegrationTests {
 
         #expect(fallbackDetail.name == "Bulbasaur")
     }
+
+    @Test func fetchDetailForA404ResponseThrowsNotFoundWhenThereIsNoCache() async throws {
+        URLProtocolStub.reset()
+        let missingID = 999_999
+        let detailURL = try #require(PokeAPIEndpoint.pokemonDetail(id: missingID).url)
+        URLProtocolStub.stub(url: detailURL, statusCode: 404, data: Data("{\"detail\":\"Not found.\"}".utf8))
+        let repository = try makeRepository()
+
+        await #expect(throws: AppError.notFound) {
+            try await repository.fetchPokemonDetail(id: missingID)
+        }
+    }
 }
