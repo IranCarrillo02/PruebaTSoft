@@ -16,7 +16,8 @@ struct PruebaTSoftApp: App {
             NavigationStack {
                 PokemonListView(
                     viewModel: container.makePokemonListViewModel(),
-                    imageLoader: container.imageLoader
+                    imageLoader: container.imageLoader,
+                    fetchPokemonDetailUseCase: container.fetchPokemonDetailUseCase
                 )
             }
         }

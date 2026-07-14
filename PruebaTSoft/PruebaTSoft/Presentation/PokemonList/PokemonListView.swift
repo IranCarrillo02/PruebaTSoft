@@ -3,15 +3,30 @@ import SwiftUI
 struct PokemonListView: View {
     @State private var viewModel: PokemonListViewModel
     private let imageLoader: ImageLoading
+    private let fetchPokemonDetailUseCase: FetchPokemonDetailUseCaseProtocol
 
-    init(viewModel: PokemonListViewModel, imageLoader: ImageLoading) {
+    init(
+        viewModel: PokemonListViewModel,
+        imageLoader: ImageLoading,
+        fetchPokemonDetailUseCase: FetchPokemonDetailUseCaseProtocol
+    ) {
         _viewModel = State(initialValue: viewModel)
         self.imageLoader = imageLoader
+        self.fetchPokemonDetailUseCase = fetchPokemonDetailUseCase
     }
 
     var body: some View {
         content
             .navigationTitle("Pokédex")
+            .navigationDestination(for: Pokemon.self) { pokemon in
+                PokemonDetailView(
+                    viewModel: PokemonDetailViewModel(
+                        pokemon: pokemon,
+                        fetchPokemonDetailUseCase: fetchPokemonDetailUseCase
+                    ),
+                    imageLoader: imageLoader
+                )
+            }
             .task {
                 await viewModel.loadInitialPageIfNeeded()
             }
@@ -38,10 +53,12 @@ struct PokemonListView: View {
     private var list: some View {
         List {
             ForEach(viewModel.pokemons) { pokemon in
-                PokemonRowView(pokemon: pokemon, imageLoader: imageLoader)
-                    .onAppear {
-                        Task { await viewModel.loadNextPageIfNeeded(currentItem: pokemon) }
-                    }
+                NavigationLink(value: pokemon) {
+                    PokemonRowView(pokemon: pokemon, imageLoader: imageLoader)
+                }
+                .onAppear {
+                    Task { await viewModel.loadNextPageIfNeeded(currentItem: pokemon) }
+                }
             }
 
             if viewModel.isLoadingNextPage {
