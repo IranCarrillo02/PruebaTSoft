@@ -1,3 +1,4 @@
+import Foundation
 import Observation
 
 @MainActor
@@ -15,14 +16,40 @@ final class PokemonListViewModel {
     private(set) var isLoadingNextPage = false
     private(set) var canLoadMore = true
 
+    var searchText: String = "" {
+        didSet { scheduleSearch() }
+    }
+    private(set) var searchResults: [Pokemon] = []
+    private(set) var isSearching = false
+
     private let fetchPokemonListUseCase: FetchPokemonListUseCaseProtocol
+    private let searchPokemonUseCase: SearchPokemonUseCaseProtocol
     private let pageSize: Int
+    private let searchDebounceNanoseconds: UInt64
     private var currentOffset = 0
     private static let paginationLookahead = 3
+    /// Comfortably covers PokéAPI's ~1300 total Pokémon in a single call, so search
+    /// works across everything, not just the pages the user has already scrolled through.
+    private static let searchIndexLimit = 2000
 
-    init(fetchPokemonListUseCase: FetchPokemonListUseCaseProtocol, pageSize: Int = 20) {
+    private var searchIndex: [Pokemon] = []
+    private var hasLoadedSearchIndex = false
+    private var searchDebounceTask: Task<Void, Never>?
+
+    var isSearchActive: Bool {
+        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    init(
+        fetchPokemonListUseCase: FetchPokemonListUseCaseProtocol,
+        searchPokemonUseCase: SearchPokemonUseCaseProtocol,
+        pageSize: Int = 20,
+        searchDebounceNanoseconds: UInt64 = 300_000_000
+    ) {
         self.fetchPokemonListUseCase = fetchPokemonListUseCase
+        self.searchPokemonUseCase = searchPokemonUseCase
         self.pageSize = pageSize
+        self.searchDebounceNanoseconds = searchDebounceNanoseconds
     }
 
     func loadInitialPageIfNeeded() async {
@@ -66,6 +93,38 @@ final class PokemonListViewModel {
         } catch {
             canLoadMore = false
         }
+    }
+
+    private func scheduleSearch() {
+        searchDebounceTask?.cancel()
+        guard isSearchActive else {
+            searchResults = []
+            return
+        }
+        let debounce = searchDebounceNanoseconds
+        searchDebounceTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: debounce)
+            guard !Task.isCancelled else { return }
+            await self?.performSearch()
+        }
+    }
+
+    private func performSearch() async {
+        isSearching = true
+        defer { isSearching = false }
+
+        if !hasLoadedSearchIndex {
+            do {
+                searchIndex = try await fetchPokemonListUseCase.execute(offset: 0, limit: Self.searchIndexLimit)
+                hasLoadedSearchIndex = true
+            } catch {
+                searchResults = []
+                return
+            }
+        }
+
+        guard !Task.isCancelled else { return }
+        searchResults = searchPokemonUseCase.execute(query: searchText, in: searchIndex)
     }
 
     private static func mapError(_ error: Error) -> AppError {

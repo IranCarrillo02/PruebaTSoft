@@ -2,7 +2,7 @@
 
 [![iOS CI](https://github.com/IranCarrillo02/PruebaTSoft/actions/workflows/ci.yml/badge.svg)](https://github.com/IranCarrillo02/PruebaTSoft/actions/workflows/ci.yml)
 
-App en SwiftUI que consume [PokéAPI](https://pokeapi.co/) para mostrar un listado de los primeros Pokémon (con paginación incremental) y una pantalla de detalle, construida con Clean Architecture + MVVM, persistencia local con SwiftData y cobertura de tests en las tres capas.
+App en SwiftUI que consume [PokéAPI](https://pokeapi.co/) para mostrar un listado de los primeros Pokémon (con paginación incremental y búsqueda por nombre) y una pantalla de detalle, construida con Clean Architecture + MVVM, persistencia local con SwiftData y cobertura de tests en las tres capas.
 
 ![Listado de Pokémon](docs/screenshots/pokemon_list.png)
 
@@ -45,7 +45,7 @@ PruebaTSoft/
   Domain/
     Entities/             Pokemon, PokemonDetail — structs planos, sin dependencias de frameworks
     Repositories/          PokemonRepositoryProtocol
-    UseCases/              FetchPokemonListUseCase, FetchPokemonDetailUseCase
+    UseCases/              FetchPokemonListUseCase, FetchPokemonDetailUseCase, SearchPokemonUseCase
     Errors/                AppError (mapeo centralizado de errores)
   Data/
     Network/               APIClient (async/await), PokeAPIEndpoint, DTOs, ImageLoader
@@ -72,6 +72,10 @@ Estrategia **network-first con fallback a caché** usando SwiftData: cada pantal
 
 Todo lo necesario (networking, persistencia, imágenes, testing) está cubierto por Foundation/SwiftUI/SwiftData/XCTest/Swift Testing. Esto evita cualquier paso de resolución de paquetes que pudiera fallar o quedar desactualizado en la máquina de quien revise el reto, y mantiene el alcance del proyecto honesto para lo que pide el assessment. El trade-off (por ejemplo, frente a usar Kingfisher para imágenes o Alamofire para red) está documentado en `docs/decisions.md` (ADR-005).
 
+## Búsqueda por nombre
+
+No forma parte de los requisitos del PDF, pero se agregó como valor extra: un searchbar nativo (`.searchable`) en el listado que busca por nombre en **todos** los Pokémon, no solo en los ya cargados por scroll. Como PokéAPI no tiene un endpoint de búsqueda, la primera vez que el usuario escribe algo se carga (una sola vez, con debounce) un índice completo liviano, y las búsquedas subsecuentes filtran ese índice en memoria — cero llamadas de red por cada letra escrita. Detalle y trade-offs en `docs/decisions.md` (ADR-013).
+
 ## Cobertura de los adicionales (bonus) del reto
 
 | Punto del PDF | Cómo se cubrió |
@@ -89,7 +93,7 @@ Todo lo necesario (networking, persistencia, imágenes, testing) está cubierto 
 
 - **Unit tests** (Domain/Data/Presentation): casos de uso contra un repositorio mockeado, mappers, `PokemonRepository` contra un `APIClient`/`PokemonLocalDataSource` mockeados, y ambos ViewModels contra sus casos de uso mockeados.
 - **Test de integración**: `PokemonRepository` de extremo a extremo contra un `URLSession` con `URLProtocol` real (JSON real, decodificación real) y un `ModelContainer` de SwiftData real en memoria — valida la estrategia network-first/cache-fallback sin mocks de por medio.
-- **UI tests (XCUITest)**: `PokemonFlowUITests` lanza la app real y navega contra la PokéAPI real (sin stubs), verificando que el listado cargue y que la navegación a detalle funcione de punta a punta.
+- **UI tests (XCUITest)**: `PokemonFlowUITests` lanza la app real y navega contra la PokéAPI real (sin stubs), verificando que el listado cargue, que la navegación a detalle funcione de punta a punta, y que la búsqueda encuentre un Pokémon fuera de la primera página cargada (prueba de que llega al índice completo, no solo a lo ya paginado).
 
 ## Pendientes / mejoras futuras
 

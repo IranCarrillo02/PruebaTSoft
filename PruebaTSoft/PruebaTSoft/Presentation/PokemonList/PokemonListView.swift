@@ -18,6 +18,10 @@ struct PokemonListView: View {
     var body: some View {
         content
             .navigationTitle("Pokédex")
+            .searchable(
+                text: Binding(get: { viewModel.searchText }, set: { viewModel.searchText = $0 }),
+                prompt: "Buscar Pokémon"
+            )
             .navigationDestination(for: Pokemon.self) { pokemon in
                 PokemonDetailView(
                     viewModel: PokemonDetailViewModel(
@@ -34,7 +38,9 @@ struct PokemonListView: View {
 
     @ViewBuilder
     private var content: some View {
-        if viewModel.pokemons.isEmpty {
+        if viewModel.isSearchActive {
+            searchResultsContent
+        } else if viewModel.pokemons.isEmpty {
             switch viewModel.state {
             case .idle, .loading:
                 SkeletonListView()
@@ -47,6 +53,25 @@ struct PokemonListView: View {
             }
         } else {
             list
+        }
+    }
+
+    @ViewBuilder
+    private var searchResultsContent: some View {
+        if viewModel.searchResults.isEmpty {
+            if viewModel.isSearching {
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                EmptyStateView(message: "No se encontraron Pokémon para \"\(viewModel.searchText)\".")
+            }
+        } else {
+            List(viewModel.searchResults) { pokemon in
+                NavigationLink(value: pokemon) {
+                    PokemonRowView(pokemon: pokemon, imageLoader: imageLoader)
+                }
+            }
+            .listStyle(.plain)
         }
     }
 

@@ -145,3 +145,15 @@ Registro de las decisiones de arquitectura e implementación relevantes del proy
 **Decisión:** no interceptar la red en estos tests (a diferencia del test de integración de `PokemonRepository`, que sí usa `URLProtocol` stub); dejar que golpeen la PokéAPI real.
 
 **Consecuencias:** son pruebas de humo (smoke tests) de que la app real, tal como se entrega, efectivamente habla con la API real de punta a punta — la forma más directa de detectar errores de wiring (DI, navegación, forma real del JSON) que un mock no puede revelar. El trade-off es una dependencia de red y disponibilidad de la API en CI; se mitigó con timeouts generosos (15s) en las aserciones. Si esto resultara flaky en la práctica, la siguiente iteración sería inyectar una URL base configurable por variable de entorno/launch argument para apuntar a un servidor de test.
+
+---
+
+## ADR-013: Búsqueda como filtro local sobre un índice completo cargado una vez, no una llamada de red por tecla
+
+**Fecha:** 2026-07-14
+
+**Contexto:** se agregó un buscador de Pokémon por nombre. PokéAPI no tiene un endpoint de búsqueda/autocompletado — el endpoint de listado solo pagina por `offset`/`limit`, y filtrar solo lo ya paginado dejaría fuera cualquier Pokémon que el usuario no haya scrolleado todavía.
+
+**Decisión:** `PokemonListViewModel` carga, la primera vez que el usuario escribe algo, un índice completo (`offset: 0, limit: 2000` — cubre los ~1300 Pokémon existentes en una sola llamada, reutilizando `FetchPokemonListUseCase` sin cambios) y lo guarda en memoria. Las búsquedas subsecuentes filtran ese índice localmente con `SearchPokemonUseCase` (una función pura de substring case-insensitive, sin red ni async), con un debounce de 300ms para no filtrar en cada pulsación mientras el usuario sigue escribiendo.
+
+**Consecuencias:** la búsqueda cubre todos los Pokémon desde la primera vez que se usa, no solo los ya cargados por scroll, y no genera una llamada de red por cada letra escrita — solo una vez por sesión de la pantalla. `SearchPokemonUseCase` queda trivialmente testeable (sin mocks, sin async) al separar "cuándo/cómo se obtienen los datos" (responsabilidad del ViewModel + el use case de fetch existente) de "qué cuenta como coincidencia" (responsabilidad del use case de búsqueda). Trade-off aceptado: si la red falla en ese primer fetch del índice, la búsqueda simplemente no devuelve resultados (falla silenciosa) en vez de mostrar su propio estado de error dedicado — se prioriza simplicidad dado que es una función secundaria sobre el flujo principal.

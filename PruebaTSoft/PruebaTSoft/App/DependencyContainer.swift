@@ -8,6 +8,7 @@ final class DependencyContainer {
     let pokemonRepository: PokemonRepositoryProtocol
     let fetchPokemonListUseCase: FetchPokemonListUseCaseProtocol
     let fetchPokemonDetailUseCase: FetchPokemonDetailUseCaseProtocol
+    let searchPokemonUseCase: SearchPokemonUseCaseProtocol
 
     init() {
         do {
@@ -25,9 +26,13 @@ final class DependencyContainer {
         self.pokemonRepository = repository
         self.fetchPokemonListUseCase = FetchPokemonListUseCase(repository: repository)
         self.fetchPokemonDetailUseCase = FetchPokemonDetailUseCase(repository: repository)
+        self.searchPokemonUseCase = SearchPokemonUseCase()
     }
 
     func makePokemonListViewModel() -> PokemonListViewModel {
-        PokemonListViewModel(fetchPokemonListUseCase: fetchPokemonListUseCase)
+        PokemonListViewModel(
+            fetchPokemonListUseCase: fetchPokemonListUseCase,
+            searchPokemonUseCase: searchPokemonUseCase
+        )
     }
 }
