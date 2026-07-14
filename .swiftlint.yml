@@ -10,10 +10,13 @@ opt_in_rules:
   - contains_over_first_not_nil
   - empty_count
   - fatal_error_message
-  - force_unwrapping
   - implicitly_unwrapped_optional
   - unneeded_parentheses_in_closure_argument
   - vertical_whitespace_closing_braces
+
+# force_unwrapping is intentionally not enabled: it flags legitimate cases like
+# `URL(string: "https://...")!` on a static, compile-time-known-safe literal,
+# which would force awkward `guard let` boilerplate around values that can never be nil.
 
 disabled_rules:
   - todo
