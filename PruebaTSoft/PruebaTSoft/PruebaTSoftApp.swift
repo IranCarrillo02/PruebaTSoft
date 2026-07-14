@@ -9,9 +9,16 @@ import SwiftUI
 
 @main
 struct PruebaTSoftApp: App {
+    private let container = DependencyContainer()
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            NavigationStack {
+                PokemonListView(
+                    viewModel: container.makePokemonListViewModel(),
+                    imageLoader: container.imageLoader
+                )
+            }
         }
     }
 }
