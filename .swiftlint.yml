@@ -1,0 +1,36 @@
+included:
+  - PruebaTSoft
+
+excluded:
+  - PruebaTSoft/PruebaTSoft.xcodeproj
+  - .build
+
+opt_in_rules:
+  - closure_spacing
+  - contains_over_first_not_nil
+  - empty_count
+  - fatal_error_message
+  - force_unwrapping
+  - implicitly_unwrapped_optional
+  - unneeded_parentheses_in_closure_argument
+  - vertical_whitespace_closing_braces
+
+disabled_rules:
+  - todo
+
+line_length:
+  warning: 120
+  error: 160
+
+type_body_length:
+  warning: 300
+  error: 400
+
+function_body_length:
+  warning: 60
+  error: 100
+
+identifier_name:
+  min_length: 2
+  excluded:
+    - id

@@ -1,0 +1,48 @@
+name: iOS CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install SwiftLint
+        run: brew install swiftlint
+
+      - name: Run SwiftLint
+        run: swiftlint lint --strict --config .swiftlint.yml
+
+  build-and-test:
+    runs-on: macos-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve an available iPhone simulator
+        id: destination
+        run: |
+          LINE=$(xcodebuild -project PruebaTSoft/PruebaTSoft.xcodeproj -scheme PruebaTSoft -showdestinations 2>/dev/null \
+            | grep "platform:iOS Simulator" | grep -v placeholder | grep "name:iPhone" | head -n 1)
+          ID=$(echo "$LINE" | grep -Eo 'id:[^,]+' | cut -d: -f2)
+          if [ -z "$ID" ]; then
+            echo "No available iPhone simulator destination found for scheme PruebaTSoft" >&2
+            xcodebuild -project PruebaTSoft/PruebaTSoft.xcodeproj -scheme PruebaTSoft -showdestinations
+            exit 1
+          fi
+          echo "Using simulator: $LINE"
+          echo "id=$ID" >> "$GITHUB_OUTPUT"
+
+      - name: Build and test
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project PruebaTSoft/PruebaTSoft.xcodeproj \
+            -scheme PruebaTSoft \
+            -destination "id=${{ steps.destination.outputs.id }}" \
+            CODE_SIGNING_ALLOWED=NO
