@@ -29,6 +29,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Ensure an iOS Simulator runtime is installed
+        run: |
+          if ! xcrun simctl list runtimes | grep -q "iOS "; then
+            echo "No iOS Simulator runtime found on this runner — downloading one..."
+            xcodebuild -downloadPlatform iOS
+          fi
+
       - name: Resolve an available iPhone simulator
         id: destination
         run: |
