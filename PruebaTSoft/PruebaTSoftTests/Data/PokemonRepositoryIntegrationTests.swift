@@ -4,6 +4,7 @@ import Testing
 @testable import PruebaTSoft
 
 @Suite(.serialized)
+@MainActor
 struct PokemonRepositoryIntegrationTests {
 
     private static let listJSON = """

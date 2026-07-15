@@ -120,10 +120,39 @@ struct PokemonListViewModelTests {
         #expect(useCase.requestedOffsets == [0])
     }
 
+    @Test func refreshDiscardsAStalePaginationResultThatResolvesAfterwards() async throws {
+        let useCase = FetchPokemonListUseCaseMock()
+        useCase.resultsByOffset[0] = .success(makePokemons(0..<5))
+        // Distinguishable "wrong" ids stand in for stale page-2 data fetched before the refresh.
+        useCase.resultsByOffset[5] = .success(makePokemons(100..<105))
+        useCase.gate(offset: 5) // hold the pagination call open until we explicitly release it
+        let viewModel = makeViewModel(fetchUseCase: useCase)
+        await viewModel.loadInitialPageIfNeeded()
+        let lastItem = try #require(viewModel.pokemons.last)
+
+        async let pagination: Void = viewModel.loadNextPageIfNeeded(currentItem: lastItem)
+        try? await Task.sleep(nanoseconds: 5_000_000) // let pagination start and reach the gate
+        await viewModel.refresh() // completes fully while pagination is still gated
+        useCase.openGate(for: 5) // only now let the stale pagination call resolve
+        await pagination
+
+        #expect(viewModel.pokemons.map(\.id) == Array(0..<5))
+    }
+
     // MARK: - Search
 
-    private func waitForDebounce() async {
-        try? await Task.sleep(nanoseconds: Self.testDebounceNanoseconds * 5)
+    /// For tests that deliberately inspect state *while* a search is gated mid-flight (so
+    /// waiting for `isSearching` to settle would defeat the point): polls until the mock has
+    /// registered the expected number of calls instead of sleeping a fixed, load-sensitive duration.
+    private func waitUntil(
+        _ useCase: FetchPokemonListUseCaseMock,
+        hasRequestedCallCount expectedCount: Int,
+        timeoutNanoseconds: UInt64 = 2_000_000_000
+    ) async {
+        let deadline = ContinuousClock.now.advanced(by: .nanoseconds(Int64(timeoutNanoseconds)))
+        while useCase.requestedCalls.count < expectedCount, ContinuousClock.now < deadline {
+            await Task.yield()
+        }
     }
 
     @Test func settingSearchTextPopulatesResultsFromTheFullIndex() async {
@@ -136,7 +165,7 @@ struct PokemonListViewModelTests {
         let viewModel = makeViewModel(fetchUseCase: useCase)
 
         viewModel.searchText = "char"
-        await waitForDebounce()
+        await viewModel.waitForPendingSearchToFinish()
 
         #expect(viewModel.searchResults.map(\.name) == ["Charmander", "Charizard"])
         #expect(viewModel.isSearchActive == true)
@@ -147,7 +176,7 @@ struct PokemonListViewModelTests {
         useCase.resultsByLimit[2000] = .success([Pokemon(id: 4, name: "Charmander", imageURL: nil)])
         let viewModel = makeViewModel(fetchUseCase: useCase)
         viewModel.searchText = "char"
-        await waitForDebounce()
+        await viewModel.waitForPendingSearchToFinish()
         #expect(viewModel.searchResults.isEmpty == false)
 
         viewModel.searchText = ""
@@ -165,12 +194,40 @@ struct PokemonListViewModelTests {
         let viewModel = makeViewModel(fetchUseCase: useCase)
 
         viewModel.searchText = "char"
-        await waitForDebounce()
+        await viewModel.waitForPendingSearchToFinish()
         viewModel.searchText = "bulba"
-        await waitForDebounce()
+        await viewModel.waitForPendingSearchToFinish()
 
         #expect(viewModel.searchResults.map(\.name) == ["Bulbasaur"])
         #expect(useCase.requestedCalls.filter { $0.limit == 2000 }.count == 1)
+    }
+
+    @Test func staleSearchCannotClobberANewerSearchsResultsOrLoadingFlag() async {
+        let useCase = FetchPokemonListUseCaseMock()
+        useCase.resultsByLimit[2000] = .success([
+            Pokemon(id: 4, name: "Charmander", imageURL: nil),
+            Pokemon(id: 1, name: "Bulbasaur", imageURL: nil)
+        ])
+        useCase.gate(offset: 0)
+        let viewModel = makeViewModel(fetchUseCase: useCase)
+
+        viewModel.searchText = "char"
+        await waitUntil(useCase, hasRequestedCallCount: 1) // generation 1 registers, blocks on the gate
+
+        viewModel.searchText = "bulba"
+        await waitUntil(useCase, hasRequestedCallCount: 2) // generation 2 registers, blocks on the gate
+        #expect(viewModel.isSearching == true)
+
+        useCase.openGate(for: 0, callsToAllow: 1) // release the stale generation 1 call first
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        #expect(viewModel.isSearching == true) // generation 2 is still genuinely in flight
+        #expect(viewModel.searchResults.isEmpty)
+
+        useCase.openGate(for: 0, callsToAllow: 1) // now release generation 2
+        await viewModel.waitForPendingSearchToFinish()
+
+        #expect(viewModel.searchResults.map(\.name) == ["Bulbasaur"])
+        #expect(viewModel.isSearching == false)
     }
 
     @Test func searchReturnsEmptyResultsWhenTheIndexFetchFails() async {
@@ -179,7 +236,7 @@ struct PokemonListViewModelTests {
         let viewModel = makeViewModel(fetchUseCase: useCase)
 
         viewModel.searchText = "char"
-        await waitForDebounce()
+        await viewModel.waitForPendingSearchToFinish()
 
         #expect(viewModel.searchResults.isEmpty)
     }

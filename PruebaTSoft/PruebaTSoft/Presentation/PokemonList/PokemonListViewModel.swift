@@ -36,6 +36,16 @@ final class PokemonListViewModel {
     private var hasLoadedSearchIndex = false
     private var searchDebounceTask: Task<Void, Never>?
 
+    /// Bumped on every `loadFirstPage()` (initial load or refresh). A `loadNextPage()` call
+    /// that was already in flight when a refresh restarted the list captures the generation
+    /// current at its start and discards its result if that generation is no longer current —
+    /// otherwise a slow pagination response resolving after a refresh could silently append
+    /// stale data onto (or clobber) the freshly reloaded list. See docs/decisions.md ADR-014.
+    private var listGeneration = 0
+    /// Same idea as `listGeneration`, scoped to search: a slow search-index fetch or filter
+    /// resolving after a newer keystroke's search must not overwrite the newer results.
+    private var searchGeneration = 0
+
     var isSearchActive: Bool {
         !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
@@ -70,14 +80,18 @@ final class PokemonListViewModel {
     }
 
     private func loadFirstPage() async {
+        listGeneration += 1
+        let generation = listGeneration
         state = .loading
         do {
             let results = try await fetchPokemonListUseCase.execute(offset: 0, limit: pageSize)
+            guard generation == listGeneration else { return }
             pokemons = results
             currentOffset = results.count
             canLoadMore = results.count == pageSize
             state = .loaded
         } catch {
+            guard generation == listGeneration else { return }
             state = .error(Self.mapError(error))
         }
     }
@@ -85,12 +99,15 @@ final class PokemonListViewModel {
     private func loadNextPage() async {
         isLoadingNextPage = true
         defer { isLoadingNextPage = false }
+        let generation = listGeneration
         do {
             let results = try await fetchPokemonListUseCase.execute(offset: currentOffset, limit: pageSize)
+            guard generation == listGeneration else { return }
             pokemons.append(contentsOf: results)
             currentOffset += results.count
             canLoadMore = results.count == pageSize
         } catch {
+            guard generation == listGeneration else { return }
             canLoadMore = false
         }
     }
@@ -109,21 +126,38 @@ final class PokemonListViewModel {
         }
     }
 
+    /// Exposed (internal, not part of the public UI-facing API) so tests can deterministically
+    /// await the in-flight debounced search via `@testable import`, instead of polling flags or
+    /// sleeping a fixed duration that can be too short under heavy parallel test load.
+    func waitForPendingSearchToFinish() async {
+        await searchDebounceTask?.value
+    }
+
     private func performSearch() async {
+        searchGeneration += 1
+        let generation = searchGeneration
         isSearching = true
-        defer { isSearching = false }
+        defer {
+            // Only the still-current generation should clear the flag — otherwise a stale
+            // search finishing after a newer one started could flip `isSearching` back to
+            // false while that newer search is still genuinely in flight.
+            if generation == searchGeneration { isSearching = false }
+        }
 
         if !hasLoadedSearchIndex {
             do {
-                searchIndex = try await fetchPokemonListUseCase.execute(offset: 0, limit: Self.searchIndexLimit)
+                let index = try await fetchPokemonListUseCase.execute(offset: 0, limit: Self.searchIndexLimit)
+                guard generation == searchGeneration else { return }
+                searchIndex = index
                 hasLoadedSearchIndex = true
             } catch {
+                guard generation == searchGeneration else { return }
                 searchResults = []
                 return
             }
         }
 
-        guard !Task.isCancelled else { return }
+        guard generation == searchGeneration else { return }
         searchResults = searchPokemonUseCase.execute(query: searchText, in: searchIndex)
     }
 

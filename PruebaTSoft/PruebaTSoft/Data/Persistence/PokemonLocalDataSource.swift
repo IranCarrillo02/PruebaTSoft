@@ -8,17 +8,16 @@ protocol PokemonLocalDataSourceProtocol: Sendable {
     @MainActor func saveDetail(_ detail: PokemonDetail) throws
 }
 
-final class PokemonLocalDataSource: PokemonLocalDataSourceProtocol, @unchecked Sendable {
+@MainActor
+final class PokemonLocalDataSource: PokemonLocalDataSourceProtocol {
     private let modelContainer: ModelContainer
 
     init(modelContainer: ModelContainer) {
         self.modelContainer = modelContainer
     }
 
-    @MainActor
     private var context: ModelContext { modelContainer.mainContext }
 
-    @MainActor
     func cachedList(offset: Int, limit: Int) throws -> [Pokemon] {
         let descriptor = FetchDescriptor<CachedPokemon>(
             predicate: #Predicate { $0.order >= offset && $0.order < offset + limit },
@@ -27,7 +26,6 @@ final class PokemonLocalDataSource: PokemonLocalDataSourceProtocol, @unchecked S
         return try context.fetch(descriptor).map(PokemonMapper.toDomain(cached:))
     }
 
-    @MainActor
     func saveList(_ pokemons: [Pokemon], startingAt offset: Int) throws {
         for (index, pokemon) in pokemons.enumerated() {
             let order = offset + index
@@ -44,13 +42,11 @@ final class PokemonLocalDataSource: PokemonLocalDataSourceProtocol, @unchecked S
         try context.save()
     }
 
-    @MainActor
     func cachedDetail(id: Int) throws -> PokemonDetail? {
         let descriptor = FetchDescriptor<CachedPokemonDetail>(predicate: #Predicate { $0.id == id })
         return try context.fetch(descriptor).first.map(PokemonMapper.toDomain(cached:))
     }
 
-    @MainActor
     func saveDetail(_ detail: PokemonDetail) throws {
         let detailID = detail.id
         let descriptor = FetchDescriptor<CachedPokemonDetail>(predicate: #Predicate { $0.id == detailID })

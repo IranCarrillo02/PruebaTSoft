@@ -157,3 +157,27 @@ Registro de las decisiones de arquitectura e implementación relevantes del proy
 **Decisión:** `PokemonListViewModel` carga, la primera vez que el usuario escribe algo, un índice completo (`offset: 0, limit: 2000` — cubre los ~1300 Pokémon existentes en una sola llamada, reutilizando `FetchPokemonListUseCase` sin cambios) y lo guarda en memoria. Las búsquedas subsecuentes filtran ese índice localmente con `SearchPokemonUseCase` (una función pura de substring case-insensitive, sin red ni async), con un debounce de 300ms para no filtrar en cada pulsación mientras el usuario sigue escribiendo.
 
 **Consecuencias:** la búsqueda cubre todos los Pokémon desde la primera vez que se usa, no solo los ya cargados por scroll, y no genera una llamada de red por cada letra escrita — solo una vez por sesión de la pantalla. `SearchPokemonUseCase` queda trivialmente testeable (sin mocks, sin async) al separar "cuándo/cómo se obtienen los datos" (responsabilidad del ViewModel + el use case de fetch existente) de "qué cuenta como coincidencia" (responsabilidad del use case de búsqueda). Trade-off aceptado: si la red falla en ese primer fetch del índice, la búsqueda simplemente no devuelve resultados (falla silenciosa) en vez de mostrar su propio estado de error dedicado — se prioriza simplicidad dado que es una función secundaria sobre el flujo principal.
+
+---
+
+## ADR-014: Aislamiento de actor explícito en el repositorio y el data source, no dependiente del default implícito del proyecto
+
+**Fecha:** 2026-07-14
+
+**Contexto:** una revisión enfocada en Swift Concurrency reveló que `PokemonRepository` y `PokemonLocalDataSource` no tenían `@MainActor` explícito — compilaban correctamente solo porque el target de la app (no el de `PruebaTSoftTests`/`PruebaTSoftUITests`) tiene `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` en su configuración de build. Al hacer el aislamiento explícito para confirmarlo, la compilación falló de inmediato en dos archivos de test (`PokemonRepositoryTests`, `PokemonRepositoryIntegrationTests`), que construían estos tipos desde un contexto no aislado — código que solo "funcionaba" por la inferencia implícita del proyecto, no por una garantía real del compilador.
+
+**Decisión:** marcar `PokemonRepository` y `PokemonLocalDataSource` con `@MainActor` explícito (retirando el `@unchecked Sendable` que ya no hacía falta, dado que ambas solo almacenan propiedades `let` de tipos `Sendable`), y marcar los dos structs de test afectados con `@MainActor` también.
+
+**Consecuencias:** el aislamiento a `MainActor` ahora es una garantía explícita y verificable leyendo el archivo, no una consecuencia indirecta de un ajuste de build fácil de pasar por alto — importante si `PokemonRepository` alguna vez se extrae a un paquete Swift local (ver ADR-011), donde ese default de la app ya no aplicaría. Sin este cambio, esa migración futura habría cambiado el comportamiento de aislamiento de forma silenciosa.
+
+---
+
+## ADR-015: Contador de generación para descartar resultados asíncronos obsoletos en los ViewModels
+
+**Fecha:** 2026-07-14
+
+**Contexto:** la misma revisión de concurrencia identificó que ni `PokemonListViewModel` ni `PokemonDetailViewModel` protegían contra la resolución fuera de orden de dos operaciones asíncronas superpuestas — por ejemplo, un pull-to-refresh completándose mientras una paginación anterior seguía en vuelo, o un doble tap rápido en "Reintentar". El aislamiento a `MainActor` evita corrupción de memoria, pero no garantiza que la tarea que empezó primero termine primero: una respuesta vieja resolviendo después de una nueva podía sobreescribir datos frescos con datos obsoletos, o apagar `isSearching`/`isLoadingNextPage` mientras una operación más nueva seguía genuinamente en curso.
+
+**Decisión:** cada punto de entrada relevante (`loadFirstPage`/`loadNextPage` en la lista, `performSearch`, `load` en el detalle) incrementa un contador de generación propio al empezar, captura su valor localmente antes del primer `await`, y verifica que ese valor siga siendo el vigente antes de aplicar cualquier mutación de estado tras la espera — incluyendo, para `isSearching`, dentro del propio `defer`.
+
+**Consecuencias:** solo la operación más reciente de cada tipo puede escribir su resultado, sin importar el orden real de resolución. Verificado con tests de regresión deterministas que usan un mecanismo de "compuerta" en los mocks (bloquear una llamada específica hasta liberarla explícitamente) en vez de depender de tiempos de espera reales — evita también la flakiness que hubiera tenido un test basado en `Task.sleep` para forzar el orden. Como efecto secundario de escribir estos tests, se detectaron y corrigieron dos tests preexistentes de búsqueda que sí dependían de un sleep fijo y fallaban intermitentemente bajo carga paralela; se reemplazaron por una espera determinista sobre la propia `Task` de búsqueda (expuesta internamente vía `@testable import`).

@@ -70,4 +70,26 @@ struct PokemonDetailViewModelTests {
         #expect(viewModel.state == .loaded(detail))
         #expect(useCase.requestedIDs == [1, 1])
     }
+
+    @Test func rapidRetryDiscardsAStaleEarlierResultThatResolvesAfterwards() async {
+        let useCase = FetchPokemonDetailUseCaseMock()
+        useCase.blockedCallIndex = 1 // the first call (from loadIfNeeded) resolves last
+        useCase.resultsByCallIndex[1] = .failure(AppError.noConnection)
+        let detail = makeDetail(id: 1)
+        useCase.resultsByCallIndex[2] = .success(detail)
+        let pokemon = Pokemon(id: 1, name: "Bulbasaur", imageURL: nil)
+        let viewModel = PokemonDetailViewModel(pokemon: pokemon, fetchPokemonDetailUseCase: useCase)
+
+        async let firstLoad: Void = viewModel.loadIfNeeded()
+        try? await Task.sleep(nanoseconds: 5_000_000) // let the first call register and block
+
+        await viewModel.retry() // second call is not blocked and succeeds immediately
+        #expect(viewModel.state == .loaded(detail))
+
+        useCase.openGate() // release the stale first call
+        await firstLoad
+        try? await Task.sleep(nanoseconds: 5_000_000)
+
+        #expect(viewModel.state == .loaded(detail)) // unchanged by the stale, later completion
+    }
 }

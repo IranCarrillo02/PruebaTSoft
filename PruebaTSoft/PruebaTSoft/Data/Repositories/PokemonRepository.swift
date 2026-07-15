@@ -1,4 +1,5 @@
-final class PokemonRepository: PokemonRepositoryProtocol, @unchecked Sendable {
+@MainActor
+final class PokemonRepository: PokemonRepositoryProtocol {
     private let apiClient: APIClientProtocol
     private let localDataSource: PokemonLocalDataSourceProtocol
 

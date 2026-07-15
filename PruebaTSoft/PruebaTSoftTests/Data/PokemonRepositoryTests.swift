@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import PruebaTSoft
 
+@MainActor
 struct PokemonRepositoryTests {
 
     @Test func fetchListReturnsNetworkResultAndCachesIt() async throws {
