@@ -7,7 +7,7 @@ import Testing
 @MainActor
 struct PokemonRepositoryIntegrationTests {
 
-    private static let listJSON = """
+    private static let listJSON = Data("""
     {
         "count": 1302,
         "next": "https://pokeapi.co/api/v2/pokemon?offset=20&limit=20",
@@ -16,9 +16,9 @@ struct PokemonRepositoryIntegrationTests {
             { "name": "bulbasaur", "url": "https://pokeapi.co/api/v2/pokemon/1/" }
         ]
     }
-    """.data(using: .utf8)!
+    """.utf8)
 
-    private static let detailJSON = """
+    private static let detailJSON = Data("""
     {
         "id": 1,
         "name": "bulbasaur",
@@ -30,7 +30,7 @@ struct PokemonRepositoryIntegrationTests {
         "abilities": [ { "ability": { "name": "overgrow" }, "is_hidden": false } ],
         "stats": [ { "base_stat": 45, "stat": { "name": "hp" } } ]
     }
-    """.data(using: .utf8)!
+    """.utf8)
 
     private func makeRepository() throws -> PokemonRepository {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
